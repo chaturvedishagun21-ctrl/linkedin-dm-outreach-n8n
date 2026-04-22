@@ -1,0 +1,154 @@
+{
+  "name": "WF1 - Send Connection Requests",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "id": "node-trigger-wf1",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getRows",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Campaigns" },
+        "options": {}
+      },
+      "id": "node-get-campaigns",
+      "name": "Get Campaigns",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [220, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "operation": "getRows",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Prospects" },
+        "options": {}
+      },
+      "id": "node-get-prospects",
+      "name": "Get Prospects",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [440, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "operation": "getRows",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Database" },
+        "options": {}
+      },
+      "id": "node-get-db",
+      "name": "Get Database",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [660, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "mode": "combineBySql",
+        "query": "SELECT p.* FROM prospects p LEFT JOIN database d ON p.linkedin_url = d.linkedin_url WHERE d.linkedin_url IS NULL LIMIT 3"
+      },
+      "id": "node-filter-new",
+      "name": "Filter Not Contacted",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const prospects = $('Get Prospects').all();\nconst dbEntries = $('Get Database').all().map(i => i.json.linkedin_url);\nconst campaign = $('Get Campaigns').first().json;\n\nconst notContacted = prospects\n  .filter(p => !dbEntries.includes(p.json.linkedin_url))\n  .slice(0, 3);\n\nreturn notContacted.map(p => ({\n  json: {\n    ...p.json,\n    campaign_id: campaign.campaign_id,\n    campaign_name: campaign.campaign_name,\n    connection_note: campaign.connection_note,\n    message_1: campaign.message_1,\n    message_2: campaign.message_2,\n    message_3: campaign.message_3,\n    message_2_delay_hours: campaign.message_2_delay_hours,\n    message_3_delay_hours: campaign.message_3_delay_hours\n  }\n}));"
+      },
+      "id": "node-code-filter",
+      "name": "Merge Campaign + Filter New Prospects",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR_DSN/api/v1/linkedin/invite",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "YOUR_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "YOUR_ACCOUNT_ID" },
+            { "name": "linkedin_url", "value": "={{ $json.linkedin_url }}" },
+            { "name": "message", "value": "={{ $json.connection_note }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-send-connection",
+      "name": "Send Connection Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Database" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "campaign_id": "={{ $json.campaign_id }}",
+            "campaign_name": "={{ $json.campaign_name }}",
+            "linkedin_url": "={{ $json.linkedin_url }}",
+            "first_name": "={{ $json.first_name }}",
+            "last_name": "={{ $json.last_name }}",
+            "company_name": "={{ $json.company_name }}",
+            "title": "={{ $json.title }}",
+            "city": "={{ $json.city }}",
+            "country": "={{ $json.country }}",
+            "sending_account": "Test account",
+            "connection_request_status": "Sent",
+            "connection_request_time": "={{ new Date().toISOString() }}",
+            "connection_accepted": "Pending",
+            "message_1_status": "Not Yet",
+            "message_2_status": "Not Yet",
+            "message_3_status": "Not Yet",
+            "reply_received": "No"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-update-db-wf1",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1320, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": { "main": [[{ "node": "Get Campaigns", "type": "main", "index": 0 }]] },
+    "Get Campaigns": { "main": [[{ "node": "Get Prospects", "type": "main", "index": 0 }]] },
+    "Get Prospects": { "main": [[{ "node": "Get Database", "type": "main", "index": 0 }]] },
+    "Get Database": { "main": [[{ "node": "Merge Campaign + Filter New Prospects", "type": "main", "index": 0 }]] },
+    "Merge Campaign + Filter New Prospects": { "main": [[{ "node": "Send Connection Request", "type": "main", "index": 0 }]] },
+    "Send Connection Request": { "main": [[{ "node": "Save to Database", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

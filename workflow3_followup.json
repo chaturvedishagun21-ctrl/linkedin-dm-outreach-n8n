@@ -1,0 +1,191 @@
+{
+  "name": "WF3 - Follow-up Logic (Message 2 & 3)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "id": "node-trigger-wf3",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getRows",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Database" },
+        "options": {}
+      },
+      "id": "node-get-db-wf3",
+      "name": "Get Database",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [220, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "operation": "getRows",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Campaigns" },
+        "options": {}
+      },
+      "id": "node-get-campaign-wf3",
+      "name": "Get Campaigns",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [220, 500],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// For DEMO: delay is 10 minutes. Change 10 to 2880 for real 48hrs (in minutes)\nconst DEMO_DELAY_MINUTES = 10;\nconst now = new Date();\nconst rows = $('Get Database').all();\n\nconst needsMsg2 = rows.filter(row => {\n  const r = row.json;\n  if (r.message_1_status !== 'Sent') return false;\n  if (r.message_2_status !== 'Not Yet') return false;\n  if (r.reply_received === 'Yes') return false;\n  const sentTime = new Date(r.message_1_sent_time);\n  const diffMins = (now - sentTime) / 1000 / 60;\n  return diffMins >= DEMO_DELAY_MINUTES;\n});\n\nreturn needsMsg2;"
+      },
+      "id": "node-filter-msg2",
+      "name": "Filter Needs Message 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// For DEMO: delay is 10 minutes. Change 10 to 1440 for real 24hrs (in minutes)\nconst DEMO_DELAY_MINUTES = 10;\nconst now = new Date();\nconst rows = $('Get Database').all();\n\nconst needsMsg3 = rows.filter(row => {\n  const r = row.json;\n  if (r.message_2_status !== 'Sent') return false;\n  if (r.message_3_status !== 'Not Yet') return false;\n  if (r.reply_received === 'Yes') return false;\n  const sentTime = new Date(r.message_2_sent_time);\n  const diffMins = (now - sentTime) / 1000 / 60;\n  return diffMins >= DEMO_DELAY_MINUTES;\n});\n\nreturn needsMsg3;"
+      },
+      "id": "node-filter-msg3",
+      "name": "Filter Needs Message 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR_DSN/api/v1/linkedin/message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "YOUR_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "YOUR_ACCOUNT_ID" },
+            { "name": "linkedin_url", "value": "={{ $json.linkedin_url }}" },
+            { "name": "text", "value": "={{ $('Get Campaigns').first().json.message_2 }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-send-msg2",
+      "name": "Send Message 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://YOUR_DSN/api/v1/linkedin/message",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-API-KEY", "value": "YOUR_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "YOUR_ACCOUNT_ID" },
+            { "name": "linkedin_url", "value": "={{ $json.linkedin_url }}" },
+            { "name": "text", "value": "={{ $('Get Campaigns').first().json.message_3 }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-send-msg3",
+      "name": "Send Message 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 500]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Database" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "linkedin_url": "={{ $json.linkedin_url }}",
+            "message_2_status": "Sent",
+            "message_2_sent_time": "={{ new Date().toISOString() }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-update-msg2",
+      "name": "Update DB - Msg2 Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, 300],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": { "value": "YOUR_SHEET_ID" },
+        "sheetName": { "value": "Database" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "linkedin_url": "={{ $json.linkedin_url }}",
+            "message_3_status": "Sent",
+            "message_3_sent_time": "={{ new Date().toISOString() }}",
+            "campaign_status": "Done"
+          }
+        },
+        "options": {}
+      },
+      "id": "node-update-msg3",
+      "name": "Update DB - Msg3 Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [880, 500],
+      "credentials": { "googleSheetsOAuth2Api": { "name": "YOUR_GOOGLE_CRED_NAME" } }
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          { "node": "Get Database", "type": "main", "index": 0 },
+          { "node": "Get Campaigns", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get Database": {
+      "main": [
+        [
+          { "node": "Filter Needs Message 2", "type": "main", "index": 0 },
+          { "node": "Filter Needs Message 3", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Filter Needs Message 2": { "main": [[{ "node": "Send Message 2", "type": "main", "index": 0 }]] },
+    "Filter Needs Message 3": { "main": [[{ "node": "Send Message 3", "type": "main", "index": 0 }]] },
+    "Send Message 2": { "main": [[{ "node": "Update DB - Msg2 Sent", "type": "main", "index": 0 }]] },
+    "Send Message 3": { "main": [[{ "node": "Update DB - Msg3 Sent", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
